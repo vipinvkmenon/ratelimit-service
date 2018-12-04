@@ -13,29 +13,36 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
 	DEFAULT_PORT     = "8080"
 	CF_FORWARDED_URL = "X-Cf-Forwarded-Url"
 	DEFAULT_LIMIT    = 10
+	DEFAULT_DURATION = 0
 )
 
 var (
 	limit       int
 	rateLimiter *RateLimiter
+	delay       int
 )
 
 func main() {
 	log.SetOutput(os.Stdout)
 
 	limit = getEnv("RATE_LIMIT", DEFAULT_LIMIT)
+	delay = getEnv("DURATION", DEFAULT_LIMIT)
 	log.Printf("limit per sec [%d]\n", limit)
+	log.Printf("Set Delay [%d] milliseconds\n", delay)
 
 	rateLimiter = NewRateLimiter(limit)
 
 	http.HandleFunc("/stats", statsHandler)
 	http.Handle("/", newProxy())
+	// To change ratelimit and delays on the fly
+	http.HandleFunc("/config", onTheFlyConfig)
 	log.Fatal(http.ListenAndServe(":"+getPort(), nil))
 }
 
@@ -125,6 +132,7 @@ func (r *RateLimitedRoundTripper) RoundTrip(req *http.Request) (*http.Response, 
 			StatusCode: 429,
 			Body:       ioutil.NopCloser(bytes.NewBufferString("Too many requests")),
 		}
+		log.Printf("Too many requests")
 		return resp, nil
 	}
 
@@ -132,5 +140,47 @@ func (r *RateLimitedRoundTripper) RoundTrip(req *http.Request) (*http.Response, 
 	if err != nil {
 		return nil, err
 	}
+
+	//DELAY Method
+	delayInMilliseconds(delay)
+
 	return res, err
+}
+
+func delayInMilliseconds(duration int) {
+	log.Printf("Adding Delay of [%d] milliseconds to the request", duration)
+	time.Sleep(time.Duration(duration) * time.Millisecond)
+}
+
+func onTheFlyConfig(w http.ResponseWriter, r *http.Request) {
+
+	var oldDelay = delay
+	var oldLimit = limit
+
+	delayVal := r.URL.Query().Get("DELAY")
+	rateLimitVal := r.URL.Query().Get("LIMIT")
+
+	if delayVal != "" {
+		newDelay, err := strconv.Atoi(delayVal)
+		if err != nil {
+
+			log.Printf("Invalid delay value, setting to default")
+			delay = oldDelay
+		} else {
+			log.Printf("Setting Delay: [%d] milliseconds ", newDelay)
+			delay = newDelay
+
+		}
+	}
+	if rateLimitVal != "" {
+		newLimit, err := strconv.Atoi(rateLimitVal)
+		if err != nil {
+			log.Printf("Invalid Limit value, setting to default")
+			limit = oldLimit
+		} else {
+			log.Printf("Setting Rate Limit Value : [%d]", newLimit)
+
+			delay = newLimit
+		}
+	}
 }
