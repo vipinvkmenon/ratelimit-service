@@ -1,5 +1,5 @@
 {
-	"ImportPath": "github.com/cloudfoundry-samples/ratelimit-service",
+	"ImportPath": "github.com/vipinvkmenon/ratelimit-service",
 	"GoVersion": "go1.10.3",
 	"Deps": [
 		{
