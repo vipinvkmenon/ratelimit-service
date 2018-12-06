@@ -19,8 +19,13 @@ import (
 const (
 	DEFAULT_PORT     = "8080"
 	CF_FORWARDED_URL = "X-Cf-Forwarded-Url"
-	DEFAULT_LIMIT    = 10
-	DEFAULT_DURATION = 0
+	DEFAULT_LIMIT    = 10 //Rate Limit
+	DEFAULT_DURATION = 0  //Delay
+
+	//The following headers are used by the cf router when the rate limiter uses the Fully Brokerd Plan
+	//Refer https://docs.cloudfoundry.org/services/route-services.html
+	CF_PROXY_SIGNATURE = "X-CF-Proxy-Signature"
+	CF_PROXY_METADATA  = "X-CF-Proxy-Metadata"
 )
 
 var (
@@ -34,15 +39,16 @@ func main() {
 
 	limit = getEnv("RATE_LIMIT", DEFAULT_LIMIT)
 	delay = getEnv("DURATION", DEFAULT_LIMIT)
-	log.Printf("limit per sec [%d]\n", limit)
-	log.Printf("Set Delay [%d] milliseconds\n", delay)
+	log.Printf("limit per sec %d\n", limit)
+	log.Printf("Set Delay %d milliseconds\n", delay)
 
 	rateLimiter = NewRateLimiter(limit)
 
+	//Routes
 	http.HandleFunc("/stats", statsHandler)
-	http.Handle("/", newProxy())
-	// To change ratelimit and delays on the fly
-	http.HandleFunc("/config", onTheFlyConfig)
+	http.Handle("/", newProxy())                       //Simple End point for RL service can be used with when using RL as CUPS
+	http.Handle("/service-instance/", brokeredProxy()) //When using the RL as a brokered service
+	http.HandleFunc("/config", onTheFlyConfig)         // To change ratelimit and delays on the fly
 	log.Fatal(http.ListenAndServe(":"+getPort(), nil))
 }
 
@@ -58,6 +64,7 @@ func newProxy() http.Handler {
 
 			req.URL = url
 			req.Host = url.Host
+
 		},
 		Transport: newRateLimitedRoundTripper(),
 	}
@@ -147,11 +154,13 @@ func (r *RateLimitedRoundTripper) RoundTrip(req *http.Request) (*http.Response, 
 	return res, err
 }
 
+// Adds delay to processing the request
 func delayInMilliseconds(duration int) {
 	log.Printf("Adding Delay of [%d] milliseconds to the request", duration)
 	time.Sleep(time.Duration(duration) * time.Millisecond)
 }
 
+//Simple API to change LIMIT and DELAY on demand
 func onTheFlyConfig(w http.ResponseWriter, r *http.Request) {
 
 	var oldDelay = delay
@@ -180,7 +189,43 @@ func onTheFlyConfig(w http.ResponseWriter, r *http.Request) {
 		} else {
 			log.Printf("Setting Rate Limit Value : [%d]", newLimit)
 
-			delay = newLimit
+			limit = newLimit
+			rateLimiter = NewRateLimiter(limit)
 		}
 	}
+
+}
+
+//Function to handle RL & Delay when using the service as a brokered service.
+func brokeredProxy() http.Handler {
+	log.Printf("Through Brokered Proxy")
+	proxy := &httputil.ReverseProxy{
+		Director: func(req *http.Request) {
+
+			forwardedURL := req.Header.Get(CF_FORWARDED_URL)
+			proxySignature := req.Header.Get(CF_PROXY_SIGNATURE)
+			proxyMetadata := req.Header.Get(CF_PROXY_METADATA)
+			//the request url will be in the format /service-instance/<ServiceInstanceID>/bind-instance/<BindInstanceID>
+			//While currently not used for anythingg other than for logging this data can be used later
+			path := req.URL.Path
+			servInstance := strings.Split(path, "/")[2]
+			log.Printf("Serv Instance " + servInstance)
+			bindInstance := strings.Split(path, "/")[4]
+			log.Printf("Bind Instance " + bindInstance)
+
+			url, err := url.Parse(forwardedURL)
+			if err != nil {
+				log.Fatalln(err.Error())
+			}
+
+			req.URL = url
+			req.Host = url.Host
+			//As documented in the CF documentation these need to be added in the response header when using brokered approach
+			req.Header.Set(CF_PROXY_SIGNATURE, proxySignature)
+			req.Header.Set(CF_PROXY_METADATA, proxyMetadata)
+
+		},
+		Transport: newRateLimitedRoundTripper(),
+	}
+	return proxy
 }
