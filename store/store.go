@@ -17,8 +17,9 @@ type Store interface {
 }
 
 type InMemoryStore struct {
-	limit   int
-	storage map[string]*entry
+	limit    int
+	duration int
+	storage  map[string]*entry
 	sync.RWMutex
 }
 
@@ -33,8 +34,20 @@ func (e *entry) Expired() bool {
 
 func NewStore(limit int) Store {
 	store := &InMemoryStore{
-		limit:   limit,
-		storage: make(map[string]*entry),
+		limit:    limit,
+		duration: -1,
+		storage:  make(map[string]*entry),
+	}
+	store.expiryCycle()
+
+	return store
+}
+
+func NewStoreWithDuration(limit int, duration int) Store {
+	store := &InMemoryStore{
+		limit:    limit,
+		duration: duration,
+		storage:  make(map[string]*entry),
 	}
 	store.expiryCycle()
 
@@ -43,6 +56,18 @@ func NewStore(limit int) Store {
 
 func newEntry(limit int) *entry {
 	fillRatePerSec := 1000 / limit
+
+	// Logic check -> any value lesser than 10 milliseconds probably would not make this ratelimiter effective...so lets set hard limit of 10 milliseconds
+	// probably this duration should be based on the RTT value of a single request....
+	return &entry{
+		bucket: ratelimit.NewBucket(time.Duration(fillRatePerSec)*time.Millisecond, int64(limit)),
+	}
+}
+func newEntryWithDuration(limit int, duration int) *entry {
+	fillRatePerSec := duration
+
+	// Logic check -> any value lesser than 10 milliseconds probably would not make this ratelimiter effective...so lets set hard limit of 10 milliseconds
+	// probably this duration should be based on the RTT value of a single request....
 	return &entry{
 		bucket: ratelimit.NewBucket(time.Duration(fillRatePerSec)*time.Millisecond, int64(limit)),
 	}
@@ -51,7 +76,12 @@ func newEntry(limit int) *entry {
 func (s *InMemoryStore) Increment(key string) (int, error) {
 	v, ok := s.get(key)
 	if !ok {
-		v = newEntry(s.limit)
+		if s.duration == -1 {
+			v = newEntry(s.limit)
+		} else {
+			v = newEntryWithDuration(s.limit, s.duration)
+		}
+
 	}
 	if avail := v.bucket.Available(); avail == 0 {
 		v.updatedAt = time.Now()

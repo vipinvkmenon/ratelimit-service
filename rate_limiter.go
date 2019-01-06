@@ -24,6 +24,12 @@ func NewRateLimiter(limit int) *RateLimiter {
 	}
 }
 
+func NewRateLimiterWithDuration(limit int, duration int) *RateLimiter {
+	return &RateLimiter{
+		store: store.NewStoreWithDuration(limit, duration),
+	}
+}
+
 func (r *RateLimiter) ExceedsLimit(ip string) bool {
 	if _, err := r.store.Increment(ip); err != nil {
 		fmt.Printf("rate limit exceeded for %s\n", ip)

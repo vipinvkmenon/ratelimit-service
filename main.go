@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -20,7 +21,8 @@ const (
 	DEFAULT_PORT     = "8080"
 	CF_FORWARDED_URL = "X-Cf-Forwarded-Url"
 	DEFAULT_LIMIT    = 10 //Rate Limit
-	DEFAULT_DURATION = 0  //Delay
+	DEFAULT_DELAY    = 0  //Delay
+	DEFAULT_DURATION = -1 //
 
 	//The following headers are used by the cf router when the rate limiter uses the Fully Brokerd Plan
 	//Refer https://docs.cloudfoundry.org/services/route-services.html
@@ -32,17 +34,24 @@ var (
 	limit       int
 	rateLimiter *RateLimiter
 	delay       int
+	duration    int
 )
 
 func main() {
 	log.SetOutput(os.Stdout)
 
 	limit = getEnv("RATE_LIMIT", DEFAULT_LIMIT)
-	delay = getEnv("DURATION", DEFAULT_LIMIT)
+	delay = getEnv("DELAY", DEFAULT_DELAY)
+	duration = getEnv("DURATION", DEFAULT_DURATION)
 	log.Printf("limit per sec %d\n", limit)
 	log.Printf("Set Delay %d milliseconds\n", delay)
+	log.Printf("Set Duration %d milliseconds\n", duration)
 
-	rateLimiter = NewRateLimiter(limit)
+	if duration == -1 {
+		rateLimiter = NewRateLimiter(limit)
+	} else {
+		rateLimiter = NewRateLimiterWithDuration(limit, duration)
+	}
 
 	//Routes
 	http.HandleFunc("/stats", statsHandler)
@@ -134,6 +143,7 @@ func (r *RateLimitedRoundTripper) RoundTrip(req *http.Request) (*http.Response, 
 	remoteIP := strings.Split(req.RemoteAddr, ":")[0]
 
 	log.Printf("request from [%s]\n", remoteIP)
+	delayInMilliseconds(delay) //Since delays can be more than a second, add the delay before the request falls into the bucket.
 	if r.rateLimiter.ExceedsLimit(remoteIP) {
 		resp := &http.Response{
 			StatusCode: 429,
@@ -149,7 +159,7 @@ func (r *RateLimitedRoundTripper) RoundTrip(req *http.Request) (*http.Response, 
 	}
 
 	//DELAY Method
-	delayInMilliseconds(delay)
+	//delayInMilliseconds(delay)
 
 	return res, err
 }
@@ -165,9 +175,11 @@ func onTheFlyConfig(w http.ResponseWriter, r *http.Request) {
 
 	var oldDelay = delay
 	var oldLimit = limit
+	var oldDuration = duration
 
 	delayVal := r.URL.Query().Get("DELAY")
 	rateLimitVal := r.URL.Query().Get("LIMIT")
+	durationVal := r.URL.Query().Get("DURATION")
 
 	if delayVal != "" {
 		newDelay, err := strconv.Atoi(delayVal)
@@ -177,7 +189,7 @@ func onTheFlyConfig(w http.ResponseWriter, r *http.Request) {
 			delay = oldDelay
 		} else {
 			log.Printf("Setting Delay: [%d] milliseconds ", newDelay)
-			delay = newDelay
+			delay = int(math.Abs(float64(newDelay)))
 
 		}
 	}
@@ -189,7 +201,19 @@ func onTheFlyConfig(w http.ResponseWriter, r *http.Request) {
 		} else {
 			log.Printf("Setting Rate Limit Value : [%d]", newLimit)
 
-			limit = newLimit
+			limit = int(math.Abs(float64(newLimit)))
+			rateLimiter = NewRateLimiter(limit)
+		}
+	}
+	if durationVal != "" {
+		newDuration, err := strconv.Atoi(durationVal)
+		if err != nil {
+			log.Printf("Invalid Limit value, setting to default")
+			duration = oldDuration
+		} else {
+			log.Printf("Setting Rate Limit Value : [%d]", newDuration)
+
+			limit = int(math.Abs(float64(newDuration)))
 			rateLimiter = NewRateLimiter(limit)
 		}
 	}

@@ -1,0 +1,5 @@
+---
+applications:
+- name: i311636-rl-service
+  memory: 512MB
+  buildpack: go_buildpack
