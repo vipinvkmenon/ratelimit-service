@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	s "github.com/derekparker/delve/service/test"
 	"github.com/juju/ratelimit"
 )
 
@@ -14,6 +15,7 @@ const expireInSecs = 30 * time.Second
 type Store interface {
 	Increment(string) (int, error)
 	Stats() map[string]int
+	Available(string) int
 }
 
 type InMemoryStore struct {
@@ -94,6 +96,13 @@ func (s *InMemoryStore) expiryCycle() {
 }
 
 func (s *InMemoryStore) Available(key string) int {
+	v, ok := s.get(key)
+	if !ok {
+		return 0
+	}
+	return int(v.bucket.Available())
+}
+func GetAvailable(key string) int {
 	v, ok := s.get(key)
 	if !ok {
 		return 0
