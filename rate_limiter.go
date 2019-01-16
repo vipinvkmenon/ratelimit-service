@@ -43,3 +43,13 @@ func (r *RateLimiter) GetStats() Stats {
 	}
 	return s
 }
+
+func (r *RateLimiter) AbovePercentage(ip string, limit int, percentage int) bool {
+	totalAvailable := r.store.GetAvailable(ip)
+	availablePercent := totalAvailable / limit * 100
+	if availablePercent >= percentage {
+		return true
+	}
+	return false
+
+}

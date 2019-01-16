@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	DEFAULT_PORT     = "8080"
-	CF_FORWARDED_URL = "X-Cf-Forwarded-Url"
-	DEFAULT_LIMIT    = 10 //Rate Limit
-	DEFAULT_DURATION = 0  //Delay
+	DEFAULT_PORT       = "8080"
+	CF_FORWARDED_URL   = "X-Cf-Forwarded-Url"
+	DEFAULT_LIMIT      = 10  //Rate Limit
+	DEFAULT_DURATION   = 0   //Delay
+	DEFAULT_PERCENTAGE = 100 //Percentage of acceptance
 
 	//The following headers are used by the cf router when the rate limiter uses the Fully Brokerd Plan
 	//Refer https://docs.cloudfoundry.org/services/route-services.html
@@ -32,6 +33,7 @@ var (
 	limit       int
 	rateLimiter *RateLimiter
 	delay       int
+	percentage  int
 )
 
 func main() {
@@ -39,6 +41,7 @@ func main() {
 
 	limit = getEnv("RATE_LIMIT", DEFAULT_LIMIT)
 	delay = getEnv("DURATION", DEFAULT_LIMIT)
+	percentage = getEnv("PERCENTAGE", DEFAULT_PERCENTAGE)
 	log.Printf("limit per sec %d\n", limit)
 	log.Printf("Set Delay %d milliseconds\n", delay)
 
