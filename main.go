@@ -19,9 +19,9 @@ import (
 const (
 	DEFAULT_PORT       = "8080"
 	CF_FORWARDED_URL   = "X-Cf-Forwarded-Url"
-	DEFAULT_LIMIT      = 10  //Rate Limit
-	DEFAULT_DURATION   = 0   //Delay
-	DEFAULT_PERCENTAGE = 100 //Percentage of acceptance
+	DEFAULT_LIMIT      = 10 //Rate Limit
+	DEFAULT_DURATION   = 0  //Delay
+	DEFAULT_PERCENTAGE = 0  //Percentage of denial
 
 	//The following headers are used by the cf router when the rate limiter uses the Fully Brokerd Plan
 	//Refer https://docs.cloudfoundry.org/services/route-services.html
@@ -44,6 +44,7 @@ func main() {
 	percentage = getEnv("PERCENTAGE", DEFAULT_PERCENTAGE)
 	log.Printf("limit per sec %d\n", limit)
 	log.Printf("Set Delay %d milliseconds\n", delay)
+	log.Printf("Set denial  %d percent\n", percentage)
 
 	rateLimiter = NewRateLimiter(limit)
 
@@ -146,6 +147,17 @@ func (r *RateLimitedRoundTripper) RoundTrip(req *http.Request) (*http.Response, 
 		return resp, nil
 	}
 
+	//if the bucket is below the percentage then we block
+	if !r.rateLimiter.AbovePercentage(remoteIP, limit, percentage) {
+		resp := &http.Response{
+			StatusCode: 429,
+			Body:       ioutil.NopCloser(bytes.NewBufferString("Requests below than percentage")),
+		}
+		log.Printf("Requests below than percentage")
+		return resp, nil
+
+	}
+
 	res, err = r.transport.RoundTrip(req)
 	if err != nil {
 		return nil, err
@@ -168,9 +180,11 @@ func onTheFlyConfig(w http.ResponseWriter, r *http.Request) {
 
 	var oldDelay = delay
 	var oldLimit = limit
+	var oldPercentage = percentage
 
 	delayVal := r.URL.Query().Get("DELAY")
 	rateLimitVal := r.URL.Query().Get("LIMIT")
+	percentageVal := r.URL.Query().Get("PERCENT")
 
 	if delayVal != "" {
 		newDelay, err := strconv.Atoi(delayVal)
@@ -194,6 +208,18 @@ func onTheFlyConfig(w http.ResponseWriter, r *http.Request) {
 
 			limit = newLimit
 			rateLimiter = NewRateLimiter(limit)
+		}
+	}
+	if percentageVal != "" {
+		newPercentage, err := strconv.Atoi(percentageVal)
+		if err != nil {
+			log.Printf("Invalid Percent value, setting to default")
+			percentage = oldPercentage
+		} else {
+			log.Printf("Setting Rate Limit Value : [%d]", newPercentage)
+
+			percentage = newPercentage
+			//rateLimiter = NewRateLimiter(limit)
 		}
 	}
 
