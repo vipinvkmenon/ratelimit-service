@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/vipinvkmenon/ratelimit-service/store"
@@ -19,6 +20,7 @@ type RateLimiter struct {
 }
 
 func NewRateLimiter(limit int) *RateLimiter {
+
 	return &RateLimiter{
 		store: store.NewStore(limit),
 	}
@@ -45,11 +47,16 @@ func (r *RateLimiter) GetStats() Stats {
 }
 
 func (r *RateLimiter) AbovePercentage(ip string, limit int, percentage int) bool {
-	totalAvailable := r.store.GetAvailable(ip)
-	availablePercent := totalAvailable / limit * 100
-	if availablePercent >= percentage {
+	totalAvailable := float64(r.store.GetAvailable(ip))
+	log.Printf("Total Available %f", totalAvailable)
+	log.Printf("Limit %d", limit)
+
+	availablePercent := totalAvailable / float64(limit) * 100
+	log.Printf(" Available Percent %f", availablePercent)
+	if availablePercent >= float64(percentage) {
 		return true
 	}
+	log.Printf(" Below limit")
 	return false
 
 }

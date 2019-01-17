@@ -1,6 +1,6 @@
 {
 	"ImportPath": "github.com/vipinvkmenon/ratelimit-service",
-	"GoVersion": "go1.10.3",
+	"GoVersion": "go1.11.2",
 	"Deps": [
 		{
 			"ImportPath": "github.com/juju/ratelimit",

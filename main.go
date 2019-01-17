@@ -57,6 +57,7 @@ func main() {
 }
 
 func newProxy() http.Handler {
+	log.Println("New Proxy Called")
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			forwardedURL := req.Header.Get(CF_FORWARDED_URL)
@@ -122,6 +123,7 @@ type RateLimitedRoundTripper struct {
 }
 
 func newRateLimitedRoundTripper() *RateLimitedRoundTripper {
+	log.Println("New RateLimiter Called")
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: skipSslValidation()},
 	}
