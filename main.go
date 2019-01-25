@@ -140,24 +140,27 @@ func (r *RateLimitedRoundTripper) RoundTrip(req *http.Request) (*http.Response, 
 	remoteIP := strings.Split(req.RemoteAddr, ":")[0]
 
 	log.Printf("request from [%s]\n", remoteIP)
-	if r.rateLimiter.ExceedsLimit(remoteIP) {
-		resp := &http.Response{
-			StatusCode: 429,
-			Body:       ioutil.NopCloser(bytes.NewBufferString("Too many requests")),
-		}
-		log.Printf("Too many requests")
-		return resp, nil
-	}
 
-	//if the bucket is below the percentage then we block
-	if !r.rateLimiter.AbovePercentage(remoteIP, limit, percentage) {
-		resp := &http.Response{
-			StatusCode: 429,
-			Body:       ioutil.NopCloser(bytes.NewBufferString("Requests below than percentage")),
+	if limit >= 0 {
+		if r.rateLimiter.ExceedsLimit(remoteIP) {
+			resp := &http.Response{
+				StatusCode: 429,
+				Body:       ioutil.NopCloser(bytes.NewBufferString("Too many requests")),
+			}
+			log.Printf("Too many requests")
+			return resp, nil
 		}
-		log.Printf("Requests below than percentage")
-		return resp, nil
 
+		//if the bucket is below the percentage then we block
+		if !r.rateLimiter.AbovePercentage(remoteIP, limit, percentage) {
+			resp := &http.Response{
+				StatusCode: 429,
+				Body:       ioutil.NopCloser(bytes.NewBufferString("Requests below than percentage")),
+			}
+			log.Printf("Requests below than percentage")
+			return resp, nil
+
+		}
 	}
 
 	res, err = r.transport.RoundTrip(req)
